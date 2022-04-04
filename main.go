@@ -51,14 +51,14 @@ var (
 
 func main() {
 	flag.Parse()
-	downloadsFolder := filepath.Join(".", "downloads")
-	if err := os.MkdirAll(downloadsFolder, os.ModePerm); err != nil {
+
+	if err := os.MkdirAll("downloads", os.ModePerm); err != nil {
 		log.Fatal("Erro criando diretório downloads: ", err)
 	}
 
-	outputFolder := filepath.Join(".", "generated")
+	outputFolder := filepath.Join(".", "output")
 	if err := os.MkdirAll(outputFolder, os.ModePerm); err != nil {
-		log.Fatal("Erro criando diretório downloads: ", err)
+		log.Fatal("Erro criando diretório output: ", err)
 	}
 
 	if *aid == "" {
@@ -89,7 +89,7 @@ func main() {
 
 	// Quando não houver o dado ou problema na coleta
 	if mi.Package == nil {
-		fmt.Print("--\n")
+		fmt.Print("Não há pacote de dados para esse mês.\n")
 		return
 	}
 
