@@ -350,7 +350,8 @@
                 "ODS",
                 "XLS",
                 "JSON",
-                "CSV"
+                "CSV",
+                "HTML"
               ],
               "required": true
             },
