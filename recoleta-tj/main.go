@@ -122,8 +122,7 @@ func addRev() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	client, err := mongo.Connect(ctx)
 	if err != nil {
-		fmt.Println("mongo.Connect() ERROR:", err)
-		os.Exit(1)
+		log.Fatal("mongo.Connect() ERROR:", err)
 	}
 	defer cancel()
 
@@ -154,4 +153,6 @@ func addRev() {
 	if _, err := colRev.InsertOne(context.TODO(), rev); err != nil {
 		log.Fatal("error trying to insert monthly info revision with value:", err.Error())
 	}
+
+	fmt.Printf("%s: %d/%d foi copiado para miRev.", agmi.AgencyID, agmi.Month, agmi.Year)
 }
