@@ -7,7 +7,7 @@
 # Site       : https://dadosjusbr.org/
 # Licença    : MIT
 # Descrição  : Executa o atualizador de datapackage
-# Projeto    : https://github.com/dadosjusbr/atualizador-datapackage
+# Projeto    : https://github.com/dadosjusbr/scripts/atualizador-datapackages
 #
 ####################################################################
 
