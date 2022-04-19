@@ -57,15 +57,14 @@ func main() {
 
 	client, err := newClient(c)
 	if err != nil {
-		log.Fatal("Erro ao criar cliente no banco de dados: ", err.Error())
+		log.Fatalf("Erro ao criar cliente no banco de dados: %v", err)
 	}
 	for year := 2018; year <= 2021; year++ {
 		var monthsErr []int
 		for month := 1; month <= 12; month++ {
-
 			mi, _, err := client.GetOMA(month, year, *aid)
 			if err != nil {
-				log.Fatal("Erro ao consultar informações mensais do órgão: ", err.Error())
+				log.Fatalf("Erro ao consultar informações mensais do órgão: %v", err)
 			}
 			if mi.ProcInfo != nil && mi.ProcInfo.Status == 4 {
 				monthsErr = append(monthsErr, month)

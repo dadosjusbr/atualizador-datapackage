@@ -10,7 +10,6 @@ import (
 	"github.com/dadosjusbr/storage"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -50,39 +49,31 @@ func main() {
 		log.Fatal("Flag aid obrigatória")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+
+	client, err := mongo.Connect(ctx)
+	if err != nil {
+		log.Fatal("mongo.Connect() ERROR:", err)
+	}
+	defer cancel()
+
+	clientDB, err := newClient(c)
+	if err != nil {
+		log.Fatalf("Erro ao criar cliente no banco de dados: %v", err)
+	}
+
 	for year := 2018; year <= 2021; year++ {
-
-		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-
-		client, err := mongo.Connect(ctx)
-		if err != nil {
-			log.Fatal("mongo.Connect() ERROR:", err)
-		}
-		defer cancel()
-
-		col := client.Database(c.DBName).Collection(c.MongoMICol)
-
-		filter := bson.M{
-			"aid":  *aid,
-			"year": year,
-		}
-
-		res, err := col.Find(ctx, filter)
-		if err != nil {
-			log.Fatal("Erro ao consultar informações mensais dos órgãos: ", err)
-		}
-		defer res.Close(ctx)
 		var operations []mongo.WriteModel
-		for res.Next(ctx) {
 
-			var agmi storage.AgencyMonthlyInfo
-			if err := res.Decode(&agmi); err != nil {
-				log.Fatalf("erro ao decodificar agmi: %v", err)
+		for month := 1; month <= 12; month++ {
+			agmi, _, err := clientDB.GetOMA(month, year, *aid)
+			if err != nil {
+				log.Fatalf("Erro ao consultar informações mensais do órgão: %v", err)
 			}
 
 			// ## Armazenando revisão.
 			if agmi.ProcInfo == nil {
-				fmt.Printf("%d/%d não ocorreu para o %s\n", agmi.Month, agmi.Year, agmi.AgencyID)
+				fmt.Printf("%d/%d não ocorreu erro na coleta do %s\n", agmi.Month, agmi.Year, agmi.AgencyID)
 				continue
 			}
 			rev := storage.MonthlyInfoVersion{
@@ -90,11 +81,10 @@ func main() {
 				Month:     agmi.Month,
 				Year:      agmi.Year,
 				VersionID: time.Now().Unix(),
-				Version:   agmi,
+				Version:   *agmi,
 			}
 			operation := mongo.NewInsertOneModel().SetDocument(rev)
 			operations = append(operations, operation)
-
 		}
 		if len(operations) > 0 {
 			colRev := client.Database(c.DBName).Collection(c.MongoRevCol)
@@ -107,4 +97,19 @@ func main() {
 			fmt.Print("Não há documentos para inserir.\n\n")
 		}
 	}
+}
+
+// newClient Creates client to connect with DB and Cloud5
+func newClient(conf config) (*storage.Client, error) {
+	db, err := storage.NewDBClient(conf.MongoURI, conf.DBName, conf.MongoMICol, conf.MongoAgCol, conf.MongoPkgCol, conf.MongoRevCol)
+	if err != nil {
+		return nil, fmt.Errorf("error creating DB client: %q", err)
+	}
+	db.Collection(conf.MongoMICol)
+	bc := storage.NewCloudClient(conf.SwiftUsername, conf.SwiftAPIKey, conf.SwiftAuthURL, conf.SwiftDomain, conf.SwiftContainer)
+	client, err := storage.NewClient(db, bc)
+	if err != nil {
+		return nil, fmt.Errorf("error creating storage.client: %q", err)
+	}
+	return client, nil
 }
