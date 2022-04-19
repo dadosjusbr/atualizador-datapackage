@@ -1,18 +1,15 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/dadosjusbr/storage"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type config struct {
@@ -32,14 +29,20 @@ type config struct {
 }
 
 var (
-	aid   = flag.String("aid", "", "Órgão")
-	year  = flag.Int("year", 2018, "Ano")
-	month = flag.Int("month", 1, "Mês")
+	aid = flag.String("aid", "", "Órgão")
 )
 
 func main() {
-	addRev()
 	flag.Parse()
+
+	if err := godotenv.Load(".env"); err != nil {
+		log.Fatalf("Erro ao carregar arquivo .env: %v", err)
+	}
+
+	var c config
+	if err := envconfig.Process("", &c); err != nil {
+		log.Fatalf("Erro ao carregar parâmetros do arquivo .env:%v", err)
+	}
 
 	f, err := os.OpenFile("out.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
@@ -52,31 +55,31 @@ func main() {
 		log.Fatal("Flag aid obrigatória")
 	}
 
-	if err := godotenv.Load(".env"); err != nil {
-		log.Fatal("Erro ao carregar arquivo .env.")
-	}
-
-	var c config
-	if err := envconfig.Process("", &c); err != nil {
-		log.Fatal("Erro ao carregar parâmetros do arquivo .env: ", err.Error())
-	}
-
 	client, err := newClient(c)
 	if err != nil {
 		log.Fatal("Erro ao criar cliente no banco de dados: ", err.Error())
 	}
+	for year := 2018; year <= 2021; year++ {
+		var monthsErr []int
+		for month := 1; month <= 12; month++ {
 
-	mi, _, err := client.GetOMA(*month, *year, *aid)
-	if err != nil {
-		log.Fatal("Erro ao consultar informações mensais do órgão: ", err.Error())
-	}
-
-	if mi.ProcInfo != nil {
-		str := fmt.Sprintf("MONTHS=%d YEAR=%d AID=%s ./exec.sh\n", *month, *year, *aid)
-		_, err := f.WriteString(str)
-
-		if err != nil {
-			log.Fatal(err)
+			mi, _, err := client.GetOMA(month, year, *aid)
+			if err != nil {
+				log.Fatal("Erro ao consultar informações mensais do órgão: ", err.Error())
+			}
+			if mi.ProcInfo != nil && mi.ProcInfo.Status == 4 {
+				monthsErr = append(monthsErr, month)
+			}
+		}
+		if len(monthsErr) > 0 {
+			semiformat := fmt.Sprintf("%d", monthsErr)
+			semiformat = strings.Replace(semiformat, "[", `"`, 1)
+			monthsList := strings.Replace(semiformat, "]", `"`, 1)
+			str := fmt.Sprintf(`MONTHS=%s YEAR=%d AID=%s ./exec.sh%s`, monthsList, year, *aid, "\n")
+			_, err := f.WriteString(str)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
@@ -94,65 +97,4 @@ func newClient(conf config) (*storage.Client, error) {
 		return nil, fmt.Errorf("error creating storage.client: %q", err)
 	}
 	return client, nil
-}
-
-func addRev() {
-	flag.Parse()
-
-	f, err := os.OpenFile("out.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	if *aid == "" {
-		log.Fatal("Flag aid obrigatória")
-	}
-
-	if err := godotenv.Load(".env"); err != nil {
-		log.Fatal("Erro ao carregar arquivo .env.")
-	}
-
-	var c config
-	if err := envconfig.Process("", &c); err != nil {
-		log.Fatal("Erro ao carregar parâmetros do arquivo .env: ", err.Error())
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	client, err := mongo.Connect(ctx)
-	if err != nil {
-		log.Fatal("mongo.Connect() ERROR:", err)
-	}
-	defer cancel()
-
-	col := client.Database(c.DBName).Collection(c.MongoMICol)
-	filter := bson.M{
-		"aid":   *aid,
-		"month": *month,
-		"year":  *year,
-	}
-
-	res, err := col.Find(ctx, filter)
-	if err != nil {
-		log.Fatal("Erro ao consultar informações mensais dos órgãos: ", err)
-	}
-	defer res.Close(ctx)
-	var agmi storage.AgencyMonthlyInfo
-	res.Decode(&agmi)
-
-	// ## Armazenando revisão.
-	colRev := client.Database(c.DBName).Collection(c.MongoRevCol)
-	rev := storage.MonthlyInfoVersion{
-		AgencyID:  agmi.AgencyID,
-		Month:     agmi.Month,
-		Year:      agmi.Year,
-		VersionID: time.Now().Unix(),
-		Version:   agmi,
-	}
-	if _, err := colRev.InsertOne(context.TODO(), rev); err != nil {
-		log.Fatal("error trying to insert monthly info revision with value:", err.Error())
-	}
-
-	fmt.Printf("%s: %d/%d foi copiado para miRev.", agmi.AgencyID, agmi.Month, agmi.Year)
 }
