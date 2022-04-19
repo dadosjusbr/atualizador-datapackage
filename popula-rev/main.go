@@ -10,7 +10,9 @@ import (
 	"github.com/dadosjusbr/storage"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type config struct {
@@ -51,24 +53,28 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 
-	client, err := mongo.Connect(ctx)
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(c.MongoURI))
 	if err != nil {
 		log.Fatal("mongo.Connect() ERROR:", err)
 	}
 	defer cancel()
+	defer client.Disconnect(ctx)
 
-	clientDB, err := newClient(c)
-	if err != nil {
-		log.Fatalf("Erro ao criar cliente no banco de dados: %v", err)
-	}
-
+	col := client.Database(c.DBName).Collection(c.MongoMICol)
 	for year := 2018; year <= 2021; year++ {
 		var operations []mongo.WriteModel
-
-		for month := 1; month <= 12; month++ {
-			agmi, _, err := clientDB.GetOMA(month, year, *aid)
-			if err != nil {
-				log.Fatalf("Erro ao consultar informações mensais do órgão: %v", err)
+		filter := bson.M{
+			"aid":  *aid,
+			"year": year,
+		}
+		res, err := col.Find(ctx, filter)
+		if err != nil {
+			log.Fatalf("Erro ao consultar informações mensais do órgão: %v", err)
+		}
+		for res.Next(ctx) {
+			var agmi storage.AgencyMonthlyInfo
+			if err = res.Decode(&agmi); err != nil {
+				log.Fatalf("[%s/%d/%d] Erro ao obter agmi: %s", agmi.AgencyID, agmi.Year, agmi.Month, err)
 			}
 
 			// ## Armazenando revisão.
@@ -81,7 +87,7 @@ func main() {
 				Month:     agmi.Month,
 				Year:      agmi.Year,
 				VersionID: time.Now().Unix(),
-				Version:   *agmi,
+				Version:   agmi,
 			}
 			operation := mongo.NewInsertOneModel().SetDocument(rev)
 			operations = append(operations, operation)
@@ -92,24 +98,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("Erro ao inserir em miRev [%s/%d]: %v", *aid, year, err)
 			}
-			fmt.Printf("Documentos inseridos: %d\n\n", results.ModifiedCount)
+			fmt.Printf("Documentos inseridos: %d\n\n", results.InsertedCount)
 		} else {
 			fmt.Print("Não há documentos para inserir.\n\n")
 		}
 	}
-}
-
-// newClient Creates client to connect with DB and Cloud5
-func newClient(conf config) (*storage.Client, error) {
-	db, err := storage.NewDBClient(conf.MongoURI, conf.DBName, conf.MongoMICol, conf.MongoAgCol, conf.MongoPkgCol, conf.MongoRevCol)
-	if err != nil {
-		return nil, fmt.Errorf("error creating DB client: %q", err)
-	}
-	db.Collection(conf.MongoMICol)
-	bc := storage.NewCloudClient(conf.SwiftUsername, conf.SwiftAPIKey, conf.SwiftAuthURL, conf.SwiftDomain, conf.SwiftContainer)
-	client, err := storage.NewClient(db, bc)
-	if err != nil {
-		return nil, fmt.Errorf("error creating storage.client: %q", err)
-	}
-	return client, nil
 }
