@@ -86,7 +86,7 @@ func main() {
 				AgencyID:  agmi.AgencyID,
 				Month:     agmi.Month,
 				Year:      agmi.Year,
-				VersionID: time.Now().Unix(),
+				VersionID: agmi.CrawlingTimestamp.AsTime().Unix(),
 				Version:   agmi,
 			}
 			operation := mongo.NewInsertOneModel().SetDocument(rev)
