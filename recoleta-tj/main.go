@@ -62,7 +62,11 @@ func main() {
 	for year := 2018; year <= 2021; year++ {
 		var monthsErr []int
 		for month := 1; month <= 12; month++ {
-			mi, _, err := client.GetOMA(month, year, *aid)
+			filter := map[string]int{
+				"month": month,
+				"year":  year,
+			}
+			mi, _, err := client.GetOMA(filter["month"], filter["year"], *aid)
 			if err != nil {
 				log.Fatalf("Erro ao consultar informações mensais do órgão: %v", err)
 			}
